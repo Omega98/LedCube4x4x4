@@ -40,6 +40,12 @@ typedef unsigned char byte;
 extern "C" void __cxa_pure_virtual() {;}
 
 //
+void message(int nb);
+void effectRandom(unsigned long elapsed);
+void effectOn(unsigned long elapsed);
+void updateAnimation();
+inline void inttimer1(void);
+//
 //
 
 #include "C:\Program Files\Arduino\hardware\arduino\cores\arduino\arduino.h"
