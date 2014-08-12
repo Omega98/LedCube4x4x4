@@ -41,8 +41,10 @@ extern "C" void __cxa_pure_virtual() {;}
 
 //
 void message(int nb);
+void shift(byte axis, byte direction);
 void effectRandom(unsigned long elapsed);
 void effectOn(unsigned long elapsed);
+void effectRainDown(unsigned long elapsed);
 void updateAnimation();
 inline void inttimer1(void);
 //
@@ -50,5 +52,5 @@ inline void inttimer1(void);
 
 #include "C:\Program Files\Arduino\hardware\arduino\cores\arduino\arduino.h"
 #include "C:\Program Files\Arduino\hardware\arduino\variants\leonardo\pins_arduino.h" 
-#include "Z:\LedCube4x4x4\LedCube4x4x4.ino"
+#include "C:\Documents and Settings\ats\Mes documents\Arduino\LedCube4x4x4\LedCube4x4x4.ino"
 #endif

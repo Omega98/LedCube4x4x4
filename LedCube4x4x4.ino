@@ -16,6 +16,10 @@
 
 #define WAIT_MS 500 // Delay between animation frame
 
+#define X_AXIS 1
+#define Y_AXIS 2
+#define Z_AXIS 3
+
 const byte SWITCH_LAYER_PIN[4] = {A0, A1, A2, A3};
 const byte SWITCH_LAYER_MASK[4] = {_BV(7), _BV(6), _BV(5), _BV(4)};
 
@@ -84,6 +88,29 @@ void message(int nb)
     }
 }
 
+void shift(byte axis, byte direction)
+{
+    if (axis == Z_AXIS)
+    {
+        if (direction >= 0)
+        {
+            for(int p=0; p<3; p++)
+            {
+                buffer[p] = buffer[p+1];
+            }
+            buffer[3] = 0x00;
+        }
+        else
+        {
+            for(int p=3; p>1; p--)
+            {
+                buffer[p] = buffer[p-1];
+            }
+            buffer[0] = 0x00;
+        }
+    }
+}
+
 // Turn 0-16 LEDs of each layer on at random.
 void effectRandom(unsigned long elapsed)
 {
@@ -107,6 +134,15 @@ void effectOn(unsigned long elapsed)
         {
             buffer[p] = 0xFFFF;
         }
+        isInit = true;
+    }
+}
+
+void effectRainDown(unsigned long elapsed)
+{
+    if (!isInit)
+    {
+        randomSeed(analogRead(A4));
         isInit = true;
     }
 }
