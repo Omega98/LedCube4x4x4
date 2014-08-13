@@ -41,12 +41,18 @@ extern "C" void __cxa_pure_virtual() {;}
 
 //
 void message(int nb);
+byte byteline(int start, int end);
+void normArgs(byte ix1, byte ix2, byte *ox1, byte *ox2);
 void setVoxel(byte x, byte y, byte z, bool state);
+void setPlane(byte axis, byte n, bool state);
+void boxWireframe(byte x1, byte y1, byte z1, byte x2, byte y2, byte z2);
 void shift(byte axis, byte direction);
-void effectRandom(unsigned long elapsed);
+void effectRandom1(unsigned long elapsed);
+void effectRandom2(unsigned long elapsed);
 void effectOn(unsigned long elapsed);
 void effectRainDown(unsigned long elapsed);
-void updateAnimation();
+void effectDebug(unsigned long elapsed);
+void updateAnimation(byte fx);
 inline void inttimer1(void);
 //
 //
