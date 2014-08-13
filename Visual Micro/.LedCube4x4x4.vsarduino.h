@@ -41,6 +41,7 @@ extern "C" void __cxa_pure_virtual() {;}
 
 //
 void message(int nb);
+void setVoxel(byte x, byte y, byte z, bool state);
 void shift(byte axis, byte direction);
 void effectRandom(unsigned long elapsed);
 void effectOn(unsigned long elapsed);

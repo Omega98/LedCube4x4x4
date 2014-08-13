@@ -1,4 +1,5 @@
 #define USE_IRQ_TIMER1 false
+#define USE_BIT_BUFFER 8
 
 #define LED     13      // PORTC7
 #define SR_CLK  2       // PORTD1
@@ -30,12 +31,28 @@ boolean alwaysOn = false;
 byte currentlayer = 0;
 #endif
 
-volatile uint16_t buffer[4] = {0x0000, 0x0000, 0x0000, 0x0000};
+#if USE_BIT_BUFFER == 8
+#elif USE_BIT_BUFFER == 16
+#elif USE_BIT_BUFFER == 64
+#endif
 
+#if USE_BIT_BUFFER == 8
+volatile uint8_t buffer[4][4] = {{0x0, 0x0, 0x0, 0x0},
+                                 {0x0, 0x0, 0x0, 0x0},
+                                 {0x0, 0x0, 0x0, 0x0},
+                                 {0x0, 0x0, 0x0, 0x0}};
+#elif USE_BIT_BUFFER == 16
+volatile uint16_t buffer[4] = {0x0000, 0x0000, 0x0000, 0x0000};
+#elif USE_BIT_BUFFER == 64
+volatile uint64_t buffer[4] = {0x0000000000000000,
+                               0x0000000000000000, 
+                               0x0000000000000000, 
+                               0x0000000000000000};
+#endif
 
 void setup()
 {
-    // initialize the digital pin as an output.
+    // Initialize the digital pin as an output.
     pinMode(LED, OUTPUT);     
     pinMode(SR_CLK, OUTPUT);     
     pinMode(SR_SIN, OUTPUT);     
@@ -88,27 +105,68 @@ void message(int nb)
     }
 }
 
+void setVoxel(byte x, byte y, byte z, bool state)
+{
+#if USE_BIT_BUFFER == 8
+    if (state == true)
+        bitSet(buffer[z][y], x);
+    else
+        bitClear(buffer[z][y], x);
+#else
+    if (state == true)
+        bitSet(buffer[z], (y * 4) + x);
+    else
+        bitClear(buffer[z], (y * 4) + x);
+#endif
+}
+
 void shift(byte axis, byte direction)
 {
+#if USE_BIT_BUFFER == 8
     if (axis == Z_AXIS)
     {
         if (direction >= 0)
         {
-            for(int p=0; p<3; p++)
+            for(int z=0; z<3; z++)
+                for(int y=0; y<3; y++)
+                {
+                    buffer[z][y] = buffer[z+1][y];
+                }
+            for(int y=0; y<3; y++)
+                buffer[3][y] = 0x00;
+        }
+        else
+        {
+            for(int z=3; z>1; z--)
+                for(int y=0; y<3; y++)
+                {
+                    buffer[z][y] = buffer[z-1][y];
+                }
+            for(int y=0; y<3; y++)
+                buffer[0][y] = 0x00;
+        }
+    }
+#else
+    if (axis == Z_AXIS)
+    {
+        if (direction >= 0)
+        {
+            for(int z=0; z<3; z++)
             {
-                buffer[p] = buffer[p+1];
+                buffer[z] = buffer[z+1];
             }
             buffer[3] = 0x00;
         }
         else
         {
-            for(int p=3; p>1; p--)
+            for(int z=3; z>1; z--)
             {
-                buffer[p] = buffer[p-1];
+                buffer[z] = buffer[z-1];
             }
             buffer[0] = 0x00;
         }
     }
+#endif
 }
 
 // Turn 0-16 LEDs of each layer on at random.
@@ -119,10 +177,14 @@ void effectRandom(unsigned long elapsed)
         randomSeed(analogRead(A4));
         isInit = true;
     }
-    for(byte p=0; p<4; p++)
-    {
-        buffer[p] = random(0xFFFF + 1);
-    }
+
+    for(byte z=0; z<4; z++)
+        for(int y=0; y<4; y++)
+            for(int x=0; x<4; x++)
+            {
+                byte r = random(2); // 0 to 1
+                setVoxel(x, y, z, r == 1);
+            }
 }
 
 // Turn cube full on.
@@ -130,10 +192,10 @@ void effectOn(unsigned long elapsed)
 {
     if (!isInit)
     {
-        for(byte p=0; p<4; p++)
-        {
-            buffer[p] = 0xFFFF;
-        }
+    for(byte z=0; z<4; z++)
+        for(int y=0; y<4; y++)
+            for(int x=0; x<4; x++)
+                setVoxel(x, y, z, true);
         isInit = true;
     }
 }
@@ -145,6 +207,16 @@ void effectRainDown(unsigned long elapsed)
         randomSeed(analogRead(A4));
         isInit = true;
     }
+
+    byte n = random(4) + 1; // 1 to 4
+    for (byte i=0; i<n; i++)
+    {
+        byte x = random(4); // 0 to 3
+        byte y = random(4); // 0 to 3
+        setVoxel(x, y, 3, true); 
+    }
+    shift(Z_AXIS, -1);
+    
 }
 
 // Process next frame of cube animation
@@ -244,6 +316,18 @@ void loop()
             LAYER_PORT &= LAYER_PORT_MASK; 
             
             t1off = t1;
+#if USE_BIT_BUFFER == 8
+            for(int y=0; y<4; y++)
+            {
+                for(int x=0; x<4; x++)
+                {
+                    SR_PORT &= ~SR_CLK_MASK;
+                    SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentlayer][y] >> x) & 1) << PORTD0);
+                    SR_PORT |= SR_CLK_MASK;
+                }
+            }
+            LAYER_PORT |= SWITCH_LAYER_MASK[currentlayer];
+#else
             for(int i=0; i<16; i++)
             {
                 SR_PORT &= ~SR_CLK_MASK;
@@ -251,31 +335,44 @@ void loop()
                 SR_PORT |= SR_CLK_MASK;
             }
             LAYER_PORT |= SWITCH_LAYER_MASK[currentlayer];
-
+#endif
             t1on = micros();
             toff += t1on - t1off;
 
             delayMicroseconds(timeon[i]);
         }
 
-        /*for(int currentlayer=0; currentlayer<4; currentlayer++)
-        {
-            LAYER_PORT &= LAYER_PORT_MASK; 
-
-            t1off = t1;
-            for(int i=0; i<16; i++)
-            {
-                bitClear(SR_PORT, 1);
-                bitWrite(SR_PORT, 0, bitRead(buffer[currentlayer], i));
-                bitSet(SR_PORT, 1);
-            }
-            LAYER_PORT |= SWITCH_LAYER_MASK[currentlayer];
-
-            t1on = micros();
-            toff += t1on - t1off;
-
-            delayMicroseconds(timeon[i]);
-        }*/
+//        for(int currentlayer=0; currentlayer<4; currentlayer++)
+//        {
+//            LAYER_PORT &= LAYER_PORT_MASK; 
+//
+//            t1off = t1;
+//#if USE_BIT_BUFFER == 8
+//            for(int y=0; y<4; y++)
+//            {
+//                for(int x=0; x<4; x++)
+//                {
+//                    bitClear(SR_PORT, 1);
+//                    bitWrite(SR_PORT, 0, bitRead(buffer[currentlayer][y], x));
+//                    bitSet(SR_PORT, 1);
+//                }
+//            }
+//            LAYER_PORT |= SWITCH_LAYER_MASK[currentlayer];
+//#else
+//            for(int i=0; i<16; i++)
+//            {
+//                bitClear(SR_PORT, 1);
+//                bitWrite(SR_PORT, 0, bitRead(buffer[currentlayer], i));
+//                bitSet(SR_PORT, 1);
+//            }
+//            LAYER_PORT |= SWITCH_LAYER_MASK[currentlayer];
+//#endif
+//
+//            t1on = micros();
+//            toff += t1on - t1off;
+//
+//            delayMicroseconds(timeon[i]);
+//        }
 
         LAYER_PORT &= LAYER_PORT_MASK; 
 
