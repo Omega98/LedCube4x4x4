@@ -10,8 +10,17 @@
 /// 6. Check if animation routine takes longer than WAIT_MS (i.e. message(10))
 /// 7. Test animation effects!
 
-#define USE_IRQ_TIMER1 false
-#define USE_BIT_BUFFER 16
+//LED CUBE STATISTICS - 2D buffer, full on, anodes port manip
+//time on delay=150us
+//loop=792.46us
+//toff/loop=160.40us
+//ton/loop=632.06us
+//duty cycle=79.76%
+//refresh rate=1261.89Hz
+//tanim=21.33us
+
+#define USE_IRQ_TIMER1 true
+#define USE_BIT_BUFFER 8
 
 #define LED     13      // PORTC7
 #define SR_CLK  2       // PORTD1
@@ -78,6 +87,7 @@ void setup()
         pinMode(SWITCH_LAYER_PIN[p], OUTPUT);
         digitalWrite(SWITCH_LAYER_PIN[p], LOW);
     }
+
 
 #if USE_IRQ_TIMER1 == true    
     cli();//stop interrupts
@@ -286,6 +296,7 @@ void shift(byte axis, byte direction)
 
 // Turn 0-16 LEDs of each layer on at random.
 // Use setVoxel
+// 9050us - 2D buffer
 void effectRandom1(unsigned long elapsed)
 {
     if (!isInit)
@@ -305,6 +316,7 @@ void effectRandom1(unsigned long elapsed)
 
 // Turn 0-16 LEDs of each layer on at random.
 // Use buffer brute force
+// 2234us - 2D buffer
 void effectRandom2(unsigned long elapsed)
 {
     if (!isInit)
@@ -323,7 +335,7 @@ void effectRandom2(unsigned long elapsed)
 #else
     for(byte z=0; z<4; z++)
     {
-        byte r = random(0xFF + 1);
+        byte r = random(0xFF + 1); // broken
         buffer[z] = r;
     }
 #endif
@@ -430,13 +442,16 @@ inline void inttimer1(void)
     LAYER_PORT &= LAYER_PORT_MASK; 
 
     // Set current layer anodes
-    for(int i=0; i<16; i++)
+    for(int y=0; y<4; y++)
     {
-        SR_PORT &= ~SR_CLK_MASK; // CLR
-        SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer] >> i) & 1) << PORTD0);
-        SR_PORT |= SR_CLK_MASK; // SET
-    } 
-
+        for(int x=0; x<4; x++)
+        {
+            SR_PORT &= ~SR_CLK_MASK;
+            SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer][y] >> x) & 1) << PORTD0);
+            SR_PORT |= SR_CLK_MASK;
+        }
+    }
+ 
     // Turn on current layer
     LAYER_PORT |= SWITCH_LAYER_MASK[currentLayer];
 
@@ -455,18 +470,21 @@ void loop()
     updateAnimation(FX_LOOPING);
     unsigned long t2 = millis();
 
-    if ((WAIT_MS - (t2 - t1)) > 0)
+    if ((WAIT_MS - (long)(t2 - t1)) > 0)
         delay(WAIT_MS - (t2 - t1));
     else
         message(10);
+
+    //updateAnimation(FX_LOOPING);
+    //delay(WAIT_MS);
 }
 
 #else
 
 void loop()
 {
-    static int toindex = 0;
-    int timeon[4] = {76, 450, 1000, 2500};
+    static int toindex = 1;
+    int timeon[4] = {76, 150, 1000, 2500};
 
     static unsigned long t = 0;
     static unsigned long n = 0;
@@ -480,99 +498,78 @@ void loop()
     static unsigned long tanim = 0;
     static unsigned long nanim = 0;
 
-    if (t >= 3000)
+    static unsigned long thistime = 0;
+            
+    if (t <= 1*1000000UL)
     {
+        // Warning: time spent here is not computed
+        // but it will affect overall brightness (duty cycle)
+        // since it will lengthen toff after last layer
+        if ((thistime == 0) || ((millis() - thistime) >= WAIT_MS))
+        {
+            // loop
+            thistime = millis();
+
+            unsigned long t1anim = micros();
+            updateAnimation(3);
+            unsigned long t2anim = micros();
+
+            tanim += t2anim - t1anim;
+            nanim++;
+        }
+
         unsigned long t1 = micros();
+
         unsigned long t1off;
         unsigned long t1on;
 
-        static unsigned long thistime = millis();
-
+        t1on = t1;
         for(int currentLayer=0; currentLayer<4; currentLayer++)
         {
-            LAYER_PORT &= LAYER_PORT_MASK; 
-            
-            t1off = t1;
+            LAYER_PORT &= LAYER_PORT_MASK;
+            t1off = micros();
+            ton += t1off - t1on;
+
 #if USE_BIT_BUFFER == 8
+            // 159us
             for(int y=0; y<4; y++)
             {
                 for(int x=0; x<4; x++)
                 {
+                    // 159us
                     SR_PORT &= ~SR_CLK_MASK;
                     SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer][y] >> x) & 1) << PORTD0);
                     SR_PORT |= SR_CLK_MASK;
+
+                    // 162us
+                    //bitClear(SR_PORT, 1);
+                    //bitWrite(SR_PORT, 0, bitRead(buffer[currentLayer][y], x));
+                    //bitSet(SR_PORT, 1);
                 }
             }
-            LAYER_PORT |= SWITCH_LAYER_MASK[currentLayer];
 #else
+            // 271us
             for(int i=0; i<16; i++)
             {
                 SR_PORT &= ~SR_CLK_MASK;
                 SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer] >> i) & 1) << PORTD0);
                 SR_PORT |= SR_CLK_MASK;
             }
-            LAYER_PORT |= SWITCH_LAYER_MASK[currentLayer];
 #endif
+
+            LAYER_PORT |= SWITCH_LAYER_MASK[currentLayer];
             t1on = micros();
             toff += t1on - t1off;
 
             delayMicroseconds(timeon[toindex]);
         }
-
-//        for(int currentLayer=0; currentLayer<4; currentLayer++)
-//        {
-//            LAYER_PORT &= LAYER_PORT_MASK; 
-//
-//            t1off = t1;
-//#if USE_BIT_BUFFER == 8
-//            for(int y=0; y<4; y++)
-//            {
-//                for(int x=0; x<4; x++)
-//                {
-//                    bitClear(SR_PORT, 1);
-//                    bitWrite(SR_PORT, 0, bitRead(buffer[currentLayer][y], x));
-//                    bitSet(SR_PORT, 1);
-//                }
-//            }
-//            LAYER_PORT |= SWITCH_LAYER_MASK[currentLayer];
-//#else
-//            for(int i=0; i<16; i++)
-//            {
-//                bitClear(SR_PORT, 1);
-//                bitWrite(SR_PORT, 0, bitRead(buffer[currentLayer], i));
-//                bitSet(SR_PORT, 1);
-//            }
-//            LAYER_PORT |= SWITCH_LAYER_MASK[currentLayer];
-//#endif
-//
-//            t1on = micros();
-//            toff += t1on - t1off;
-//
-//            delayMicroseconds(timeon[toindex]);
-//        }
-
-        LAYER_PORT &= LAYER_PORT_MASK; 
+           
+        LAYER_PORT &= LAYER_PORT_MASK;
 
         unsigned long t2 = micros();
         ton += t2 - t1on;
         t += t2 - t1;
         n++;
-
-        // Warning: time spent here is not computed
-        // but it will affect overall brightness (duty cycle)
-        // since it will lengthen toff after last layer
-        if ((millis() - thistime) >= WAIT_MS)
-        {
-            // loop
-            thistime = millis();
-
-            unsigned long t1anim = micros();
-            updateAnimation(FX_LOOPING);
-            unsigned long t2anim = micros();
-
-            tanim += t2anim - t1anim;
-            nanim++;
-        }
     }
     else
     {

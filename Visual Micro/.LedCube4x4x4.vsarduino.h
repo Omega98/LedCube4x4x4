@@ -57,7 +57,7 @@ inline void inttimer1(void);
 //
 //
 
-#include "C:\Program Files\Arduino\hardware\arduino\cores\arduino\arduino.h"
-#include "C:\Program Files\Arduino\hardware\arduino\variants\leonardo\pins_arduino.h" 
-#include "C:\Documents and Settings\ats\Mes documents\Arduino\LedCube4x4x4\LedCube4x4x4.ino"
+#include "C:\Program Files (x86)\Arduino\hardware\arduino\cores\arduino\arduino.h"
+#include "C:\Program Files (x86)\Arduino\hardware\arduino\variants\leonardo\pins_arduino.h" 
+#include "C:\Users\Eric\Documents\Arduino\LedCube4x4x4\LedCube4x4x4.ino"
 #endif
