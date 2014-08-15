@@ -22,9 +22,9 @@
 #define SR_CLK  2       // PORTD1
 #define SR_SIN  3       // PORTD0
 
-#define SR_PORT     PORTD
-#define SR_CLK_MASK _BV(1)
-#define SW_CLK_SIN  _BV(0)
+#define SR_PORT     PORTD   // Port where Serial Register control pins are located
+#define SR_CLK_BIT  PORTD1  // Bit number of Serial Register clock pin
+#define SR_SIN_BIT  PORTD0  // Bit number of Serial Register serial in pin
 
 #define RANDOM_PIN A4
 
@@ -206,6 +206,7 @@ void shift(byte axis, byte direction)
         if (direction >= 0)
         {
             for(int z=0; z<3; z++)
+            //for(int z=4; z>0; z--)
                 for(int y=0; y<3; y++)
                     buffer[z][y] = buffer[z+1][y];
             for(int y=0; y<3; y++)
@@ -318,19 +319,19 @@ void updateAnimation(byte fx)
 
     switch(currentfx) {
     case 1: 
-        effectRandom1(millis());
+        effectRandom1(elapsed);
         break;
     case 2: 
-        effectRandom2(millis());
+        effectRandom2(elapsed);
         break;
     case 3: // Use updateAnimation(3) for always on cube
-        effectOn(millis());
+        effectOn(elapsed);
         break;
     case 4: 
-        effectRainDown(millis());
+        effectRainDown(elapsed);
         break;
-    case 128: // Don't include in loop (128 > FX_MAX) use updateAnimation(128)
-        effectDebug(millis());
+    case 128: // Not included in loop (128 > FX_MAX); use updateAnimation(128)
+        effectDebug(elapsed);
         break;
     }
 
@@ -367,9 +368,9 @@ inline void inttimer1(void)
     {
         for(int x=0; x<4; x++)
         {
-            SR_PORT &= ~SR_CLK_MASK;
-            SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer][y] >> x) & 1) << PORTD0);
-            SR_PORT |= SR_CLK_MASK;
+            SR_PORT &= ~_BV(SR_CLK_BIT);
+            SR_PORT = (SR_PORT & ~(1 << SR_SIN_BIT)) | (((buffer[currentLayer][y] >> x) & 1) << SR_SIN_BIT);
+            SR_PORT |= _BV(SR_CLK_BIT);
         }
     }
  
@@ -411,10 +412,7 @@ void loop()
     static unsigned long n = 0;
 
     static unsigned long ton = 0;
-    static unsigned long ton_n = 0;
-
     static unsigned long toff = 0;
-    static unsigned long toff_n = 0;
 
     static unsigned long tanim = 0;
     static unsigned long nanim = 0;
@@ -425,7 +423,7 @@ void loop()
     {
         // Warning: time spent here is not computed
         // but it will affect overall brightness (duty cycle)
-        // since it will lengthen toff after last layer
+        // since it will lengthen toff before first layer
         if ((thistime == 0) || ((millis() - thistime) >= WAIT_MS))
         {
             // loop
@@ -455,13 +453,13 @@ void loop()
             {
                 for(int x=0; x<4; x++)
                 {
-                    SR_PORT &= ~SR_CLK_MASK;
-                    SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer][y] >> x) & 1) << PORTD0);
-                    SR_PORT |= SR_CLK_MASK;
+                    SR_PORT &= ~_BV(SR_CLK_BIT);
+                    SR_PORT = (SR_PORT & ~_BV(SR_SIN_BIT)) | (((buffer[currentLayer][y] >> x) & 1) << SR_SIN_BIT);
+                    SR_PORT |= _BV(SR_CLK_BIT);
                     
-                    //bitClear(SR_PORT, 1);
-                    //bitWrite(SR_PORT, 0, bitRead(buffer[currentLayer][y], x));
-                    //bitSet(SR_PORT, 1);
+                    //bitClear(SR_PORT, SR_CLK_BIT);
+                    //bitWrite(SR_PORT, SR_SIN_BIT, bitRead(buffer[currentLayer][y], x));
+                    //bitSet(SR_PORT, SR_CLK_BIT);
                 }
             }
 
@@ -484,7 +482,7 @@ void loop()
         static boolean done = false;
         if (!done)
         {
-            Serial.begin(115200);
+            Serial.begin(0xFFFF);
 
             delay(1);
 
