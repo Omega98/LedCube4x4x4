@@ -1,6 +1,3 @@
-/// 1. Compare time spent between effectRandom1 and effectRandom2 (setVoxel vs brute force)
-/// 2. Compare performance between 2D buffer vs 1D buffer
-/// 3. Compare performance between port manipulation and bit functions (set anodes loops)
 /// 4. Decide if animation functions use setVoxel or brute force when possible
 /// 5. Decide whether or not to use a fixed frame rate for the animation (currently, yes)
 ///    i.e.
@@ -19,8 +16,7 @@
 //refresh rate=1261.89Hz
 //tanim=21.33us
 
-#define USE_IRQ_TIMER1 true
-#define USE_BIT_BUFFER 8
+#define USE_IRQ_TIMER1 false
 
 #define LED     13      // PORTC7
 #define SR_CLK  2       // PORTD1
@@ -54,24 +50,10 @@ boolean isInit = false;
 byte currentLayer = 0;
 #endif
 
-#if USE_BIT_BUFFER == 8
-#elif USE_BIT_BUFFER == 16
-#elif USE_BIT_BUFFER == 64
-#endif
-
-#if USE_BIT_BUFFER == 8
-volatile uint8_t buffer[4][4] = {{0x0, 0x0, 0x0, 0x0},
-                                 {0x0, 0x0, 0x0, 0x0},
-                                 {0x0, 0x0, 0x0, 0x0},
-                                 {0x0, 0x0, 0x0, 0x0}};
-#elif USE_BIT_BUFFER == 16
-volatile uint16_t buffer[4] = {0x0000, 0x0000, 0x0000, 0x0000};
-#elif USE_BIT_BUFFER == 64
-volatile uint64_t buffer[4] = {0x0000000000000000,
-                               0x0000000000000000, 
-                               0x0000000000000000, 
-                               0x0000000000000000};
-#endif
+volatile uint8_t buffer[4][4] = {{B0000, B0000, B0000, B0000},
+                                 {B0000, B0000, B0000, B0000},
+                                 {B0000, B0000, B0000, B0000},
+                                 {B0000, B0000, B0000, B0000}};
 
 void setup()
 {
@@ -147,24 +129,16 @@ void normArgs(byte ix1, byte ix2, byte *ox1, byte *ox2)
 // Set a voxel on or off
 void setVoxel(byte x, byte y, byte z, bool state)
 {
-#if USE_BIT_BUFFER == 8
     if (state == true)
         bitSet(buffer[z][y], x);
     else
         bitClear(buffer[z][y], x);
-#else
-    if (state == true)
-        bitSet(buffer[z], (y * 4) + x);
-    else
-        bitClear(buffer[z], (y * 4) + x);
-#endif
 }
 
 // Low-Level Graphic Func
 // Set a plane on or off
 void setPlane(byte axis, byte n, bool state)
 {
-#if USE_BIT_BUFFER == 8
     if (axis == Z_AXIS)
     {
         for (byte y=0; y<4; y++)
@@ -181,33 +155,6 @@ void setPlane(byte axis, byte n, bool state)
             for (byte y=0; y<4; y++)
                 bitWrite(buffer[z][y], n, state ? 1 : 0);
     }
-#else
-    if (axis == Z_AXIS)
-    {
-        buffer[n] = state ? 0xFF : 0x00;
-    } 
-    else if (axis == Y_AXIS)
-    {
-        for (byte z=0; z<4; z++)
-        {
-            if (state == true)
-                buffer[z] |= B1111 << n;
-            else
-                buffer[z] &= ~(B1111 << n);
-        }
-    }
-    else // X_AXIS
-    {
-        for (byte z=0; z<4; z++)
-            for (byte y=0; y<4; y++)
-            {
-                if (state == true)
-                    buffer[z] |= B1 << ((y * 4) + n);
-                else
-                    buffer[z] &= ~(B1 << ((y * 4) + n));
-            }
-    }
-#endif
 }
 
 // Low-Level Graphic Func
@@ -254,7 +201,6 @@ void boxWireframe(byte x1, byte y1, byte z1, byte x2, byte y2, byte z2)
 // Shift entire buffer in the specified direction
 void shift(byte axis, byte direction)
 {
-#if USE_BIT_BUFFER == 8
     if (axis == Z_AXIS)
     {
         if (direction >= 0)
@@ -274,29 +220,12 @@ void shift(byte axis, byte direction)
                 buffer[0][y] = 0x00;
         }
     }
-#else
-    if (axis == Z_AXIS)
-    {
-        if (direction >= 0)
-        {
-            for(int z=0; z<3; z++)
-                buffer[z] = buffer[z+1];
-            buffer[3] = 0x00;
-        }
-        else
-        {
-            for(int z=3; z>1; z--)
-                buffer[z] = buffer[z-1];
-            buffer[0] = 0x00;
-        }
-    }
-#endif
 }
 
 
 // Turn 0-16 LEDs of each layer on at random.
-// Use setVoxel
-// 9050us - 2D buffer
+// Use setVoxel to randomly set each bit.
+// 400% slower than effectRandom2
 void effectRandom1(unsigned long elapsed)
 {
     if (!isInit)
@@ -315,8 +244,8 @@ void effectRandom1(unsigned long elapsed)
 }
 
 // Turn 0-16 LEDs of each layer on at random.
-// Use buffer brute force
-// 2234us - 2D buffer
+// Use buffer brute force to randomly set each X row.
+// 400% faster than effectRandom1
 void effectRandom2(unsigned long elapsed)
 {
     if (!isInit)
@@ -325,20 +254,12 @@ void effectRandom2(unsigned long elapsed)
         isInit = true;
     }
 
-#if USE_BIT_BUFFER == 8
     for(byte z=0; z<4; z++)
         for(int y=0; y<4; y++)
         {
             byte r = random(B1111 + 1);
             buffer[z][y] = r;
         }
-#else
-    for(byte z=0; z<4; z++)
-    {
-        byte r = random(0xFF + 1); // broken
-        buffer[z] = r;
-    }
-#endif
 }
 
 // Turn cube full on.
@@ -346,10 +267,10 @@ void effectOn(unsigned long elapsed)
 {
     if (!isInit)
     {
-    for(byte z=0; z<4; z++)
-        for(int y=0; y<4; y++)
-            for(int x=0; x<4; x++)
-                setVoxel(x, y, z, true);
+        for(byte z=0; z<4; z++)
+            for(int y=0; y<4; y++)
+                for(int x=0; x<4; x++)
+                    setVoxel(x, y, z, true);
         isInit = true;
     }
 }
@@ -530,32 +451,19 @@ void loop()
             t1off = micros();
             ton += t1off - t1on;
 
-#if USE_BIT_BUFFER == 8
-            // 159us
             for(int y=0; y<4; y++)
             {
                 for(int x=0; x<4; x++)
                 {
-                    // 159us
                     SR_PORT &= ~SR_CLK_MASK;
                     SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer][y] >> x) & 1) << PORTD0);
                     SR_PORT |= SR_CLK_MASK;
-
-                    // 162us
+                    
                     //bitClear(SR_PORT, 1);
                     //bitWrite(SR_PORT, 0, bitRead(buffer[currentLayer][y], x));
                     //bitSet(SR_PORT, 1);
                 }
             }
-#else
-            // 271us
-            for(int i=0; i<16; i++)
-            {
-                SR_PORT &= ~SR_CLK_MASK;
-                SR_PORT = (SR_PORT & ~(1 << PORTD0)) | (((buffer[currentLayer] >> i) & 1) << PORTD0);
-                SR_PORT |= SR_CLK_MASK;
-            }
-#endif
 
             LAYER_PORT |= SWITCH_LAYER_MASK[currentLayer];
             t1on = micros();
